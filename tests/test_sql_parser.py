@@ -88,6 +88,66 @@ class TestCTEHandling:
         assert "cte1" not in sources
         assert "cte2" not in sources
 
+    def test_nested_ctes_with_joins(self):
+        """Nested CTEs where CTEs reference real tables and join each other."""
+        sql = """
+        CREATE TABLE mart.customer_lifetime_segments AS
+        WITH order_totals AS (
+            SELECT customer_id, order_id, SUM(quantity * unit_price) AS order_total
+            FROM staging.stg_order_items
+            GROUP BY customer_id, order_id
+        ),
+        customer_metrics AS (
+            SELECT ot.customer_id, COUNT(DISTINCT ot.order_id) AS num_orders,
+                   SUM(ot.order_total) AS lifetime_value
+            FROM order_totals ot
+            JOIN staging.stg_orders o ON ot.customer_id = o.customer_id
+            GROUP BY ot.customer_id
+        ),
+        segmented AS (
+            SELECT cm.customer_id, cm.num_orders, cm.lifetime_value,
+                   CASE WHEN cm.lifetime_value >= 1000 THEN 'platinum' ELSE 'bronze' END AS segment
+            FROM customer_metrics cm
+            JOIN staging.stg_customers c ON cm.customer_id = c.customer_id
+        )
+        SELECT customer_id, num_orders, lifetime_value, segment
+        FROM segmented
+        """
+        result = parse_sql_files(_make_sql_file(sql))
+
+        assert "mart.customer_lifetime_segments" in result.tables
+
+        table_edges = [e for e in result.edges if e.edge_type == EdgeType.TABLE_LINEAGE]
+        sources = {e.source for e in table_edges if e.target == "mart.customer_lifetime_segments"}
+
+        # Real source tables should be detected
+        assert "staging.stg_order_items" in sources
+        assert "staging.stg_orders" in sources
+        assert "staging.stg_customers" in sources
+
+        # CTE aliases should NOT appear as source tables
+        assert "order_totals" not in sources
+        assert "customer_metrics" not in sources
+        assert "segmented" not in sources
+
+    def test_cte_from_sample_fixture(self):
+        """Parse the sample CTE fixture file end-to-end."""
+        fixture = Path(__file__).parent / "fixtures" / "11_mart_customer_lifetime_segments.sql"
+        content = fixture.read_text()
+        result = parse_sql_files(_make_sql_file(content, name="11_mart_customer_lifetime_segments.sql"))
+
+        assert "mart.customer_lifetime_segments" in result.tables
+
+        table_edges = [e for e in result.edges if e.edge_type == EdgeType.TABLE_LINEAGE]
+        sources = {e.source for e in table_edges if e.target == "mart.customer_lifetime_segments"}
+
+        assert "staging.stg_order_items" in sources
+        assert "staging.stg_orders" in sources
+        assert "staging.stg_customers" in sources
+
+        for cte_name in ("order_totals", "customer_metrics", "segmented"):
+            assert cte_name not in sources
+
 
 class TestMultiStatement:
     def test_chained_lineage(self):
