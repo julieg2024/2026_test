@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-lineage-tool"
+version = "0.1.0"
+description = "SQL data lineage tool - scan queries and generate lineage graphs"
+requires-python = ">=3.10"
+dependencies = [
+    "sqlglot>=26.0",
+    "networkx>=3.0",
+    "click>=8.0",
+    "gitpython>=3.1",
+    "streamlit>=1.30",
+    "streamlit-agraph>=0.0.45",
+    "graphviz>=0.20",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov"]
+
+[project.scripts]
+data-lineage = "data_lineage_tool.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["data_lineage_tool*"]
