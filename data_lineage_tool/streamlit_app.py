@@ -21,7 +21,7 @@ from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES, to_graphviz
 
 
 st.set_page_config(page_title="Data Lineage Explorer", layout="wide")
-st.title("Data Lineage Explorer")
+st.title("Data Lineage Explorer (v2 - Graphviz)")
 
 # --- Sidebar controls ---
 with st.sidebar:
@@ -168,7 +168,13 @@ if "graph" in st.session_state:
 
     # Graph visualization
     st.subheader("Lineage Graph")
-    render_graph(graph, focus_node=focus_node)
+    try:
+        render_graph(graph, focus_node=focus_node)
+    except Exception as e:
+        st.error(f"Graph rendering failed: {e}")
+        st.info("Falling back to st.graphviz_chart...")
+        dot_source = to_graphviz(graph)
+        st.graphviz_chart(dot_source, use_container_width=True)
 
     # Node details
     if focus_node and focus_node in graph:
