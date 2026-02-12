@@ -76,34 +76,32 @@ def run_analysis(source_path: str, branch_name: str | None, sql_dialect: str | N
     return graph, lineage, sql_files
 
 
+def _render_dot_as_image(dot_source: str):
+    """Render DOT source as a PNG image via server-side Graphviz.
+
+    Uses st.image with PNG bytes so the proper Graphviz layout engine
+    handles clusters and hierarchy (the JS-based st.graphviz_chart
+    does not support subgraph clusters reliably).
+    """
+    src = gv.Source(dot_source)
+    png_bytes = src.pipe(format="png")
+    st.image(png_bytes, use_container_width=True)
+
+
 def render_graph(G, focus_node=None):
-    """Render the lineage graph as SVG using Graphviz with layer-based hierarchy."""
+    """Render the lineage graph with layer-based hierarchy."""
     if focus_node and focus_node in G:
         G = get_subgraph_for_node(G, focus_node)
 
     dot_source = to_graphviz(G)
-    # Render DOT to SVG server-side and embed directly as HTML.
-    src = gv.Source(dot_source)
-    svg = src.pipe(format="svg").decode("utf-8")
-    # Make the SVG responsive
-    svg = svg.replace("<svg ", '<svg style="width:100%;height:auto;" ', 1)
-    st.html(
-        f'<div style="background:white;border:1px solid #ddd;border-radius:8px;'
-        f'padding:16px;overflow-x:auto;">{svg}</div>'
-    )
+    _render_dot_as_image(dot_source)
 
 
 def render_path_graph(G, path_nodes):
     """Render a subgraph highlighting a specific path."""
     subgraph = G.subgraph(path_nodes).copy()
     dot_source = to_graphviz(subgraph)
-    src = gv.Source(dot_source)
-    svg = src.pipe(format="svg").decode("utf-8")
-    svg = svg.replace("<svg ", '<svg style="width:100%;height:auto;" ', 1)
-    st.html(
-        f'<div style="background:white;border:1px solid #ddd;border-radius:8px;'
-        f'padding:16px;overflow-x:auto;">{svg}</div>'
-    )
+    _render_dot_as_image(dot_source)
 
 
 def _render_layer_section(graph, layer_key, lineage):
@@ -192,12 +190,7 @@ if "graph" in st.session_state:
         focus = st.selectbox("Focus on table", focus_options, key="graph_focus")
         focus_node = None if focus == "(All tables)" else focus
 
-        try:
-            render_graph(graph, focus_node=focus_node)
-        except Exception as e:
-            st.error(f"Graph rendering failed: {e}")
-            dot_source = to_graphviz(graph)
-            st.graphviz_chart(dot_source, use_container_width=True)
+        render_graph(graph, focus_node=focus_node)
 
         # Node details
         if focus_node and focus_node in graph:
@@ -283,12 +276,7 @@ if "graph" in st.session_state:
                 # Show impact subgraph
                 st.write("**Impact graph:**")
                 impact_nodes = result["direct"] | result["indirect"] | {impact_table}
-                impact_subgraph = graph.subgraph(impact_nodes).copy()
-                try:
-                    render_path_graph(graph, impact_nodes)
-                except Exception:
-                    dot_source = to_graphviz(impact_subgraph)
-                    st.graphviz_chart(dot_source, use_container_width=True)
+                render_path_graph(graph, impact_nodes)
 
     # --- Tab: Path Tracer ---
     with tab_trace:
@@ -316,20 +304,14 @@ if "graph" in st.session_state:
                     all_nodes = set()
                     for p in paths:
                         all_nodes.update(p)
-                    try:
-                        render_path_graph(graph, all_nodes)
-                    except Exception:
-                        pass
+                    render_path_graph(graph, all_nodes)
             else:
                 path = find_path(graph, from_table, to_table)
                 if not path:
                     st.info(f"No path exists from **{from_table}** to **{to_table}**.")
                 else:
                     st.success(f"**Shortest path:** {' -> '.join(path)}")
-                    try:
-                        render_path_graph(graph, set(path))
-                    except Exception:
-                        pass
+                    render_path_graph(graph, set(path))
         elif from_table == to_table:
             st.info("Select two different tables to trace a path.")
 
