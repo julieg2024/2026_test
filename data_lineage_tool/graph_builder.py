@@ -2,7 +2,7 @@
 
 import networkx as nx
 
-from data_lineage_tool.models import EdgeType, LineageResult
+from data_lineage_tool.models import DataLayer, EdgeType, LineageResult, detect_layer
 
 
 def build_graph(lineage: LineageResult, level: str = "table") -> nx.DiGraph:
@@ -17,11 +17,13 @@ def build_graph(lineage: LineageResult, level: str = "table") -> nx.DiGraph:
     G = nx.DiGraph()
 
     for name, table_node in lineage.tables.items():
+        layer = detect_layer(name)
         G.add_node(
             name,
             node_type=table_node.node_type.value,
             source_file=table_node.source_file,
             level="table",
+            layer=layer.value,
         )
 
     for edge in lineage.edges:

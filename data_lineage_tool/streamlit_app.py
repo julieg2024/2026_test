@@ -1,6 +1,7 @@
 """Streamlit web dashboard for interactive data lineage exploration."""
 
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import streamlit as st
@@ -16,6 +17,7 @@ from data_lineage_tool.graph_builder import (
     get_downstream,
     to_dict,
 )
+from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES
 
 
 st.set_page_config(page_title="Data Lineage Explorer", layout="wide")
@@ -40,13 +42,20 @@ with st.sidebar:
 
     analyze_btn = st.button("Analyze", type="primary", use_container_width=True)
 
-# Color scheme for node types
-COLOR_MAP = {
-    "table": "#4A90D9",
-    "view": "#7B68EE",
-    "column": "#50C878",
-    "cte": "#FFB347",
-}
+    # Layer legend
+    st.markdown("---")
+    st.subheader("Layer Legend")
+    for layer_key in LAYER_ORDER:
+        style = LAYER_STYLES[layer_key]
+        st.markdown(
+            f'<span style="display:inline-block;width:14px;height:14px;'
+            f'background:{style["node_fill"]};border-radius:3px;margin-right:6px;'
+            f'vertical-align:middle;"></span> {style["label"]}',
+            unsafe_allow_html=True,
+        )
+
+# Layer-based color mapping for agraph nodes
+LAYER_COLOR_MAP = {l: s["node_fill"] for l, s in LAYER_STYLES.items()}
 
 SHAPE_MAP = {
     "table": "box",
@@ -71,23 +80,32 @@ def run_analysis(source_path: str, branch_name: str | None, sql_dialect: str | N
 
 
 def render_graph(G, focus_node=None):
-    """Render the lineage graph using streamlit-agraph."""
+    """Render the lineage graph using streamlit-agraph with layer-based hierarchy."""
     if focus_node and focus_node in G:
         G = get_subgraph_for_node(G, focus_node)
 
     nodes = []
     edges = []
 
+    # Assign hierarchical level values to enforce left-to-right layer ordering.
+    # vis.js hierarchical layout uses the 'level' property to position nodes.
+    layer_level_map = {l: i for i, l in enumerate(LAYER_ORDER)}
+
     for node_id in G.nodes:
         node_data = G.nodes[node_id]
         node_type = node_data.get("node_type", "table")
+        layer = node_data.get("layer", "unknown")
+        color = LAYER_COLOR_MAP.get(layer, "#95A5A6")
+        hier_level = layer_level_map.get(layer, len(LAYER_ORDER))
+
         nodes.append(Node(
             id=node_id,
             label=node_id,
-            color=COLOR_MAP.get(node_type, "#999999"),
+            color=color,
             shape=SHAPE_MAP.get(node_type, "box"),
             size=30 if node_data.get("level") == "table" else 18,
-            title=f"Type: {node_type}\nFile: {node_data.get('source_file', 'N/A')}",
+            level=hier_level,
+            title=f"Layer: {layer}\nType: {node_type}\nFile: {node_data.get('source_file', 'N/A')}",
         ))
 
     for u, v in G.edges:
@@ -104,13 +122,36 @@ def render_graph(G, focus_node=None):
         width=900,
         height=600,
         directed=True,
-        physics=True,
+        physics=False,
         hierarchical=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
     )
 
     return agraph(nodes=nodes, edges=edges, config=config)
+
+
+def _render_layer_section(graph, layer_key, lineage):
+    """Render a collapsible section showing tables for a single layer."""
+    style = LAYER_STYLES[layer_key]
+    layer_tables = [
+        n for n in graph.nodes
+        if graph.nodes[n].get("layer") == layer_key
+    ]
+    if not layer_tables:
+        return
+
+    st.markdown(
+        f'<div style="background:{style["bg"]};border-left:4px solid {style["border"]};'
+        f'padding:8px 12px;margin-bottom:8px;border-radius:4px;">'
+        f'<strong>{style["label"]}</strong> &mdash; {len(layer_tables)} table(s)</div>',
+        unsafe_allow_html=True,
+    )
+    for name in sorted(layer_tables):
+        t = lineage.tables.get(name)
+        if t:
+            src = f" ({t.source_file})" if t.source_file else ""
+            st.write(f"  - **{t.node_type.value}** `{name}`{src}")
 
 
 # --- Main content ---
@@ -144,6 +185,24 @@ if "graph" in st.session_state:
     col2.metric("Tables/Views", len(lineage.tables))
     col3.metric("Lineage Edges", len(lineage.edges))
 
+    # Layer distribution
+    layer_counts: dict[str, int] = defaultdict(int)
+    for n in graph.nodes:
+        layer_counts[graph.nodes[n].get("layer", "unknown")] += 1
+
+    layer_cols = st.columns(len(LAYER_ORDER))
+    for col, layer_key in zip(layer_cols, LAYER_ORDER):
+        count = layer_counts.get(layer_key, 0)
+        if count:
+            style = LAYER_STYLES[layer_key]
+            col.markdown(
+                f'<div style="text-align:center;background:{style["bg"]};'
+                f'border:2px solid {style["border"]};border-radius:8px;padding:8px;">'
+                f'<div style="font-size:22px;font-weight:bold;color:{style["border"]}">{count}</div>'
+                f'<div style="font-size:12px;color:#555">{style["label"]}</div></div>',
+                unsafe_allow_html=True,
+            )
+
     # Focus selector
     table_names = sorted(graph.nodes)
     focus_options = ["(All tables)"] + table_names
@@ -175,12 +234,10 @@ if "graph" in st.session_state:
         if node_data.get("source_file"):
             st.write(f"**Defined in:** `{node_data['source_file']}`")
 
-    # Tables list
-    with st.expander("All Tables", expanded=False):
-        for name in sorted(lineage.tables):
-            t = lineage.tables[name]
-            src = f" ({t.source_file})" if t.source_file else ""
-            st.write(f"- **{t.node_type.value}** `{name}`{src}")
+    # Tables grouped by layer
+    with st.expander("All Tables (by Layer)", expanded=False):
+        for layer_key in LAYER_ORDER:
+            _render_layer_section(graph, layer_key, lineage)
 
     # JSON export
     with st.expander("Export JSON", expanded=False):
