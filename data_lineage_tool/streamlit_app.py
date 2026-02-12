@@ -124,6 +124,13 @@ def render_graph(G, focus_node=None):
         directed=True,
         physics=False,
         hierarchical=True,
+        direction="LR",
+        sortMethod="directed",
+        levelSeparation=250,
+        nodeSpacing=120,
+        treeSpacing=200,
+        parentCentralization=True,
+        edgeMinimization=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
     )
