@@ -5,7 +5,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import streamlit as st
-from streamlit_agraph import agraph, Node, Edge, Config
 
 from data_lineage_tool.github_connector import resolve_source
 from data_lineage_tool.sql_scanner import scan_directory
@@ -17,7 +16,7 @@ from data_lineage_tool.graph_builder import (
     get_downstream,
     to_dict,
 )
-from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES
+from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES, to_graphviz
 
 
 st.set_page_config(page_title="Data Lineage Explorer", layout="wide")
@@ -54,15 +53,6 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-# Layer-based color mapping for agraph nodes
-LAYER_COLOR_MAP = {l: s["node_fill"] for l, s in LAYER_STYLES.items()}
-
-SHAPE_MAP = {
-    "table": "box",
-    "view": "diamond",
-    "column": "dot",
-    "cte": "triangle",
-}
 
 
 def run_analysis(source_path: str, branch_name: str | None, sql_dialect: str | None, lineage_level: str):
@@ -80,62 +70,12 @@ def run_analysis(source_path: str, branch_name: str | None, sql_dialect: str | N
 
 
 def render_graph(G, focus_node=None):
-    """Render the lineage graph using streamlit-agraph with layer-based hierarchy."""
+    """Render the lineage graph using Graphviz with layer-based hierarchy."""
     if focus_node and focus_node in G:
         G = get_subgraph_for_node(G, focus_node)
 
-    nodes = []
-    edges = []
-
-    # Assign hierarchical level values to enforce left-to-right layer ordering.
-    # vis.js hierarchical layout uses the 'level' property to position nodes.
-    layer_level_map = {l: i for i, l in enumerate(LAYER_ORDER)}
-
-    for node_id in G.nodes:
-        node_data = G.nodes[node_id]
-        node_type = node_data.get("node_type", "table")
-        layer = node_data.get("layer", "unknown")
-        color = LAYER_COLOR_MAP.get(layer, "#95A5A6")
-        hier_level = layer_level_map.get(layer, len(LAYER_ORDER))
-
-        nodes.append(Node(
-            id=node_id,
-            label=node_id,
-            color=color,
-            shape=SHAPE_MAP.get(node_type, "box"),
-            size=30 if node_data.get("level") == "table" else 18,
-            level=hier_level,
-            title=f"Layer: {layer}\nType: {node_type}\nFile: {node_data.get('source_file', 'N/A')}",
-        ))
-
-    for u, v in G.edges:
-        edge_data = G.edges[u, v]
-        transform = edge_data.get("transformation", "")
-        edges.append(Edge(
-            source=u,
-            target=v,
-            label=transform if transform else "",
-            color="#888888",
-        ))
-
-    config = Config(
-        width=900,
-        height=600,
-        directed=True,
-        physics=False,
-        hierarchical=True,
-        direction="LR",
-        sortMethod="directed",
-        levelSeparation=250,
-        nodeSpacing=120,
-        treeSpacing=200,
-        parentCentralization=True,
-        edgeMinimization=True,
-        nodeHighlightBehavior=True,
-        highlightColor="#F7A7A6",
-    )
-
-    return agraph(nodes=nodes, edges=edges, config=config)
+    dot_source = to_graphviz(G)
+    st.graphviz_chart(dot_source, use_container_width=True)
 
 
 def _render_layer_section(graph, layer_key, lineage):
