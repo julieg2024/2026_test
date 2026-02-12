@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+import graphviz as gv
 import streamlit as st
 
 from data_lineage_tool.github_connector import resolve_source
@@ -70,12 +71,21 @@ def run_analysis(source_path: str, branch_name: str | None, sql_dialect: str | N
 
 
 def render_graph(G, focus_node=None):
-    """Render the lineage graph using Graphviz with layer-based hierarchy."""
+    """Render the lineage graph as SVG using Graphviz with layer-based hierarchy."""
     if focus_node and focus_node in G:
         G = get_subgraph_for_node(G, focus_node)
 
     dot_source = to_graphviz(G)
-    st.graphviz_chart(dot_source, use_container_width=True)
+    # Render DOT to SVG server-side and embed directly as HTML.
+    # This avoids any client-side caching or component rendering issues.
+    src = gv.Source(dot_source)
+    svg = src.pipe(format="svg").decode("utf-8")
+    # Make the SVG responsive
+    svg = svg.replace("<svg ", '<svg style="width:100%;height:auto;" ', 1)
+    st.html(
+        f'<div style="background:white;border:1px solid #ddd;border-radius:8px;'
+        f'padding:16px;overflow-x:auto;">{svg}</div>'
+    )
 
 
 def _render_layer_section(graph, layer_key, lineage):
