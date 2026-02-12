@@ -64,6 +64,70 @@ def get_subgraph_for_node(G: nx.DiGraph, node: str) -> nx.DiGraph:
     return G.subgraph(related).copy()
 
 
+def find_path(G: nx.DiGraph, source: str, target: str) -> list[str]:
+    """Find the shortest directed path between two nodes.
+
+    Returns an empty list if no path exists.
+    """
+    try:
+        return nx.shortest_path(G, source, target)
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        return []
+
+
+def find_all_paths(G: nx.DiGraph, source: str, target: str) -> list[list[str]]:
+    """Find all simple directed paths between two nodes.
+
+    Returns an empty list if no path exists.
+    """
+    try:
+        return list(nx.all_simple_paths(G, source, target))
+    except nx.NodeNotFound:
+        return []
+
+
+def get_impact(G: nx.DiGraph, node: str) -> dict:
+    """Analyze the downstream impact of changing a node.
+
+    Returns a dict with:
+      - direct: set of immediate downstream nodes
+      - indirect: set of transitive downstream nodes (excluding direct)
+      - total: total count of affected nodes
+      - by_layer: dict mapping layer name to list of affected nodes
+    """
+    direct = set(G.successors(node))
+    all_downstream = get_downstream(G, node)
+    indirect = all_downstream - direct
+
+    by_layer: dict[str, list[str]] = {}
+    for n in sorted(all_downstream):
+        layer = G.nodes[n].get("layer", "unknown")
+        by_layer.setdefault(layer, []).append(n)
+
+    return {
+        "direct": direct,
+        "indirect": indirect,
+        "total": len(all_downstream),
+        "by_layer": by_layer,
+    }
+
+
+def search_nodes(G: nx.DiGraph, query: str) -> list[str]:
+    """Search for nodes whose name contains the query string (case-insensitive)."""
+    q = query.lower()
+    return sorted(n for n in G.nodes if q in n.lower())
+
+
+def get_root_nodes(G: nx.DiGraph) -> list[str]:
+    """Get all root nodes (nodes with no incoming edges)."""
+    return sorted(n for n in G.nodes if G.in_degree(n) == 0)
+
+
+def get_leaf_nodes(G: nx.DiGraph) -> list[str]:
+    """Get all leaf nodes (nodes with no outgoing edges)."""
+    return sorted(n for n in G.nodes if G.out_degree(n) == 0)
+
+
 def to_dict(G: nx.DiGraph) -> dict:
     """Export graph as a JSON-serializable dictionary."""
     return {

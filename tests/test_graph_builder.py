@@ -4,7 +4,9 @@ from data_lineage_tool.models import (
     EdgeType, LineageEdge, LineageResult, NodeType, TableNode,
 )
 from data_lineage_tool.graph_builder import (
-    build_graph, get_downstream, get_upstream, get_subgraph_for_node, to_dict,
+    build_graph, find_all_paths, find_path, get_downstream, get_impact,
+    get_leaf_nodes, get_root_nodes, get_subgraph_for_node, get_upstream,
+    search_nodes, to_dict,
 )
 
 
@@ -57,6 +59,89 @@ class TestGraphQueries:
         G = build_graph(_make_lineage())
         sub = get_subgraph_for_node(G, "staging")
         assert set(sub.nodes) == {"raw", "staging", "mart"}
+
+
+class TestFindPath:
+    def test_shortest_path(self):
+        G = build_graph(_make_lineage())
+        path = find_path(G, "raw", "mart")
+        assert path == ["raw", "staging", "mart"]
+
+    def test_direct_path(self):
+        G = build_graph(_make_lineage())
+        path = find_path(G, "raw", "staging")
+        assert path == ["raw", "staging"]
+
+    def test_no_path(self):
+        G = build_graph(_make_lineage())
+        path = find_path(G, "mart", "raw")
+        assert path == []
+
+    def test_nonexistent_node(self):
+        G = build_graph(_make_lineage())
+        path = find_path(G, "raw", "nonexistent")
+        assert path == []
+
+    def test_all_paths(self):
+        G = build_graph(_make_lineage())
+        paths = find_all_paths(G, "raw", "mart")
+        assert len(paths) >= 1
+        assert ["raw", "staging", "mart"] in paths
+
+    def test_all_paths_no_path(self):
+        G = build_graph(_make_lineage())
+        paths = find_all_paths(G, "mart", "raw")
+        assert paths == []
+
+
+class TestImpact:
+    def test_impact_from_root(self):
+        G = build_graph(_make_lineage())
+        result = get_impact(G, "raw")
+        assert result["total"] == 2
+        assert result["direct"] == {"staging"}
+        assert result["indirect"] == {"mart"}
+
+    def test_impact_from_leaf(self):
+        G = build_graph(_make_lineage())
+        result = get_impact(G, "mart")
+        assert result["total"] == 0
+        assert result["direct"] == set()
+        assert result["indirect"] == set()
+
+    def test_impact_by_layer(self):
+        G = build_graph(_make_lineage())
+        result = get_impact(G, "raw")
+        assert "by_layer" in result
+
+
+class TestSearchNodes:
+    def test_search_finds_match(self):
+        G = build_graph(_make_lineage())
+        results = search_nodes(G, "stag")
+        assert "staging" in results
+
+    def test_search_case_insensitive(self):
+        G = build_graph(_make_lineage())
+        results = search_nodes(G, "RAW")
+        assert "raw" in results
+
+    def test_search_no_match(self):
+        G = build_graph(_make_lineage())
+        results = search_nodes(G, "nonexistent")
+        assert results == []
+
+
+class TestRootLeafNodes:
+    def test_root_nodes(self):
+        G = build_graph(_make_lineage())
+        roots = get_root_nodes(G)
+        assert roots == ["raw"]
+
+    def test_leaf_nodes(self):
+        G = build_graph(_make_lineage())
+        leaves = get_leaf_nodes(G)
+        assert leaves == ["mart"]
 
 
 class TestToDict:

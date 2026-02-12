@@ -91,5 +91,87 @@ def list_tables(source, dialect):
         click.echo(f"  {table.node_type.value:6s}  {name}{source_info}")
 
 
+@main.command()
+@click.argument("source")
+@click.argument("table")
+@click.option("--branch", "-b", default=None, help="Git branch to clone")
+@click.option("--dialect", "-d", default=None, help="SQL dialect")
+def impact(source, table, branch, dialect):
+    """Show the downstream impact of changing a table."""
+    from data_lineage_tool.github_connector import resolve_source
+    from data_lineage_tool.sql_scanner import scan_directory
+    from data_lineage_tool.sql_parser import parse_sql_files
+    from data_lineage_tool.graph_builder import build_graph, get_impact
+
+    repo_path = resolve_source(source, branch=branch)
+    sql_files = scan_directory(repo_path)
+    lineage = parse_sql_files(sql_files, dialect=dialect)
+    graph = build_graph(lineage, level="table")
+
+    if table not in graph:
+        click.echo(f"Table '{table}' not found in lineage graph.")
+        return
+
+    result = get_impact(graph, table)
+    click.echo(f"\nImpact analysis for: {table}")
+    click.echo(f"Total affected: {result['total']} table(s)\n")
+
+    if result["direct"]:
+        click.echo("Direct dependents:")
+        for n in sorted(result["direct"]):
+            click.echo(f"  - {n}")
+
+    if result["indirect"]:
+        click.echo("\nIndirect dependents:")
+        for n in sorted(result["indirect"]):
+            click.echo(f"  - {n}")
+
+    if result["by_layer"]:
+        click.echo("\nBy layer:")
+        for layer, nodes in sorted(result["by_layer"].items()):
+            click.echo(f"  {layer}: {', '.join(nodes)}")
+
+
+@main.command()
+@click.argument("source")
+@click.argument("from_table")
+@click.argument("to_table")
+@click.option("--branch", "-b", default=None, help="Git branch to clone")
+@click.option("--dialect", "-d", default=None, help="SQL dialect")
+@click.option("--all-paths", is_flag=True, help="Show all paths, not just shortest")
+def trace(source, from_table, to_table, branch, dialect, all_paths):
+    """Trace the data flow path between two tables."""
+    from data_lineage_tool.github_connector import resolve_source
+    from data_lineage_tool.sql_scanner import scan_directory
+    from data_lineage_tool.sql_parser import parse_sql_files
+    from data_lineage_tool.graph_builder import build_graph, find_path, find_all_paths
+
+    repo_path = resolve_source(source, branch=branch)
+    sql_files = scan_directory(repo_path)
+    lineage = parse_sql_files(sql_files, dialect=dialect)
+    graph = build_graph(lineage, level="table")
+
+    for t in (from_table, to_table):
+        if t not in graph:
+            click.echo(f"Table '{t}' not found in lineage graph.")
+            return
+
+    if all_paths:
+        paths = find_all_paths(graph, from_table, to_table)
+        if not paths:
+            click.echo(f"No path found from '{from_table}' to '{to_table}'.")
+            return
+        click.echo(f"\nAll paths from {from_table} to {to_table} ({len(paths)} found):\n")
+        for i, p in enumerate(paths, 1):
+            click.echo(f"  Path {i}: {' -> '.join(p)}")
+    else:
+        path = find_path(graph, from_table, to_table)
+        if not path:
+            click.echo(f"No path found from '{from_table}' to '{to_table}'.")
+            return
+        click.echo(f"\nShortest path from {from_table} to {to_table}:\n")
+        click.echo(f"  {' -> '.join(path)}")
+
+
 if __name__ == "__main__":
     main()
