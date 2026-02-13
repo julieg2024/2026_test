@@ -70,10 +70,7 @@ def to_graphviz(G: nx.DiGraph) -> str:
         style = LAYER_STYLES[layer]
         lines.append(f"    subgraph cluster_{layer} {{")
         lines.append(f'        label="{style["label"]}";')
-        lines.append(f'        style="filled,rounded";')
-        lines.append(f'        fillcolor="{style["bg"]}";')
-        lines.append(f'        color="{style["border"]}";')
-        lines.append(f'        penwidth=2;')
+        lines.append(f'        style=invis;')
         lines.append(f'        fontname="Helvetica Bold";')
         lines.append(f'        fontsize=13;')
         lines.append(f'        labeljust=l;')
