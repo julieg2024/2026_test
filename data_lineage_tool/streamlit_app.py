@@ -27,7 +27,7 @@ from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES, to_graphviz
 
 
 st.set_page_config(page_title="Data Lineage Explorer", layout="wide")
-st.title("Data Lineage Explorer")
+st.title("Data Lineage Explorer (v3 - Server PNG)")
 
 # --- Sidebar controls ---
 with st.sidebar:
@@ -83,6 +83,12 @@ def _render_dot_as_image(dot_source: str):
     handles clusters and hierarchy (the JS-based st.graphviz_chart
     does not support subgraph clusters reliably).
     """
+    # Inject higher DPI for crisp rendering in the browser
+    dot_source = dot_source.replace(
+        "digraph lineage {",
+        "digraph lineage {\n    dpi=150;",
+        1,
+    )
     src = gv.Source(dot_source)
     png_bytes = src.pipe(format="png")
     st.image(png_bytes, use_container_width=True)
