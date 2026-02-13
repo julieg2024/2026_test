@@ -27,7 +27,7 @@ from data_lineage_tool.visualizer import LAYER_ORDER, LAYER_STYLES, to_graphviz
 
 
 st.set_page_config(page_title="Data Lineage Explorer", layout="wide")
-st.title("Data Lineage Explorer (v3 - Server PNG)")
+st.title("Data Lineage Explorer")
 
 # --- Sidebar controls ---
 with st.sidebar:
